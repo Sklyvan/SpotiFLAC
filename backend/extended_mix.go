@@ -97,9 +97,58 @@ func FindExtendedMixOnSpotify(trackName, artistName string, originalDurationSeco
 		AppLog("[ExtMix/Spotify] Stripped search name: %q → %q\n", trackName, searchName)
 	}
 
+	// Step 1 — broad search: query without any variant keyword so the search engine
+	// is not confused. Fetch 20 results and filter locally for any variant keyword.
+	broadQuery := fmt.Sprintf("%s %s", searchName, artistName)
+	AppLog("[ExtMix/Spotify] Broad search: query=%q limit=20\n", broadQuery)
+
+	broadResults, broadErr := client.SearchByType(ctx, broadQuery, "track", 20, 0)
+	if broadErr != nil {
+		AppLog("[ExtMix/Spotify] Broad search error: %v\n", broadErr)
+	} else {
+		AppLog("[ExtMix/Spotify] Got %d broad results\n", len(broadResults))
+		for _, result := range broadResults {
+			AppLog("[ExtMix/Spotify]   Candidate: %q by %q durationMs=%d (need >%d)\n",
+				result.Name, result.Artists, result.Duration, originalDurationMS)
+
+			if !extendedMixArtistMatches(result.Artists, artistName) {
+				AppLog("[ExtMix/Spotify]     SKIP: artist mismatch\n")
+				continue
+			}
+			if result.Duration <= originalDurationMS {
+				AppLog("[ExtMix/Spotify]     SKIP: duration %dms not longer than original %dms\n", result.Duration, originalDurationMS)
+				continue
+			}
+
+			matchedVariant := ""
+			for _, v := range extendedMixVariants {
+				if extendedMixTitleContainsVariant(result.Name, v) {
+					matchedVariant = v
+					break
+				}
+			}
+			if matchedVariant == "" {
+				AppLog("[ExtMix/Spotify]     SKIP: no variant keyword in title %q\n", result.Name)
+				continue
+			}
+
+			identifiers, err := GetSpotifyTrackIdentifiersDirect(result.ID)
+			if err != nil || identifiers.ISRC == "" {
+				AppLog("[ExtMix/Spotify]     SKIP: ISRC resolution failed: %v\n", err)
+				continue
+			}
+
+			AppLog("[ExtMix/Spotify] MATCH (broad): %q variant=%q ISRC=%s SpotifyID=%s\n",
+				result.Name, matchedVariant, identifiers.ISRC, result.ID)
+			return identifiers.ISRC, result.ID, matchedVariant, true
+		}
+	}
+
+	// Step 2 — per-variant fallback: targeted query per keyword. Catches cases where
+	// the extended mix doesn't rank well in broad results.
 	for _, variant := range extendedMixVariants {
 		query := fmt.Sprintf("%s %s %s", searchName, variant, artistName)
-		AppLog("[ExtMix/Spotify] Trying variant=%q query=%q\n", variant, query)
+		AppLog("[ExtMix/Spotify] Variant search: variant=%q query=%q\n", variant, query)
 
 		results, err := client.SearchByType(ctx, query, "track", 5, 0)
 		if err != nil {
@@ -107,38 +156,32 @@ func FindExtendedMixOnSpotify(trackName, artistName string, originalDurationSeco
 			continue
 		}
 
-		AppLog("[ExtMix/Spotify] Got %d results for variant=%q\n", len(results), variant)
-
 		for _, result := range results {
-			AppLog("[ExtMix/Spotify]   Candidate: %q by %q durationMs=%d (need >%d)\n",
-				result.Name, result.Artists, result.Duration, originalDurationMS)
+			AppLog("[ExtMix/Spotify]   Candidate: %q by %q durationMs=%d\n",
+				result.Name, result.Artists, result.Duration)
 
 			if !extendedMixArtistMatches(result.Artists, artistName) {
-				AppLog("[ExtMix/Spotify]     SKIP: artist mismatch (want %q, got %q)\n", artistName, result.Artists)
 				continue
 			}
 			if !extendedMixTitleContainsVariant(result.Name, variant) {
-				AppLog("[ExtMix/Spotify]     SKIP: title %q does not contain variant %q\n", result.Name, variant)
 				continue
 			}
-			// SearchResult.Duration is in milliseconds.
 			if result.Duration <= originalDurationMS {
-				AppLog("[ExtMix/Spotify]     SKIP: duration %dms not longer than original %dms\n", result.Duration, originalDurationMS)
 				continue
 			}
 
 			identifiers, err := GetSpotifyTrackIdentifiersDirect(result.ID)
 			if err != nil || identifiers.ISRC == "" {
-				AppLog("[ExtMix/Spotify]     SKIP: could not resolve ISRC for %s: %v\n", result.ID, err)
 				continue
 			}
 
-			AppLog("[ExtMix/Spotify] MATCH: %q ISRC=%s SpotifyID=%s\n", result.Name, identifiers.ISRC, result.ID)
+			AppLog("[ExtMix/Spotify] MATCH (variant): %q ISRC=%s SpotifyID=%s\n",
+				result.Name, identifiers.ISRC, result.ID)
 			return identifiers.ISRC, result.ID, variant, true
 		}
 	}
 
-	AppLog("[ExtMix/Spotify] No qualifying result found across all variants\n")
+	AppLog("[ExtMix/Spotify] No qualifying result found\n")
 	return "", "", "", false
 }
 

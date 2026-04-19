@@ -418,11 +418,11 @@ func (q *QobuzDownloader) DownloadTrack(spotifyID, outputDir, quality, filenameF
 // minDurationSeconds (the original track's duration in whole seconds). It returns the first
 // qualifying QobuzTrack or an error when no result passes all three filters.
 func (q *QobuzDownloader) searchByTitleArtistVariant(title, artist, variant string, minDurationSeconds int) (*QobuzTrack, error) {
-	query := fmt.Sprintf("%s %s", title, variant)
+	query := fmt.Sprintf("%s %s %s", title, artist, variant)
 
 	resp, err := doQobuzSignedRequest(http.MethodGet, "track/search", url.Values{
 		"query": {query},
-		"limit": {"5"},
+		"limit": {"10"},
 	}, q.client)
 	if err != nil {
 		return nil, fmt.Errorf("qobuz extended mix search request failed: %w", err)
