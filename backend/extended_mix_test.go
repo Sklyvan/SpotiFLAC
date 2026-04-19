@@ -168,11 +168,74 @@ func TestStripEditSuffixForSearch(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Deezer candidate filtering (mirrors findExtendedMixOnDeezer logic)
+// ---------------------------------------------------------------------------
+
+func TestDeezerCandidateFiltering(t *testing.T) {
+	type candidate struct {
+		title    string
+		artist   string
+		duration int // seconds
+		isrc     string
+	}
+
+	cases := []struct {
+		cand           candidate
+		expectedArtist string
+		originalSec    int
+		wantPass       bool
+		desc           string
+	}{
+		{
+			candidate{"Stop The Bleeding (Extended Mix)", "Phuture Noize", 360, "GBCBR2100001"},
+			"Phuture Noize", 180, true, "clear extended mix match",
+		},
+		{
+			candidate{"Stop The Bleeding (Extended Mix)", "Phuture Noize", 180, "GBCBR2100001"},
+			"Phuture Noize", 180, false, "same duration as original — rejected",
+		},
+		{
+			candidate{"Stop The Bleeding (Extended Mix)", "Someone Else", 360, "GBCBR2100001"},
+			"Phuture Noize", 180, false, "wrong artist",
+		},
+		{
+			candidate{"Stop The Bleeding", "Phuture Noize", 360, "GBCBR2100001"},
+			"Phuture Noize", 180, false, "no variant keyword in title",
+		},
+		{
+			candidate{"Stop The Bleeding (Extended Mix)", "Phuture Noize", 360, ""},
+			"Phuture Noize", 180, false, "no ISRC — rejected",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			artistOK := extendedMixArtistMatches(tc.cand.artist, tc.expectedArtist)
+			durationOK := tc.cand.duration > tc.originalSec
+			variantOK := false
+			for _, v := range extendedMixVariants {
+				if extendedMixTitleContainsVariant(tc.cand.title, v) {
+					variantOK = true
+					break
+				}
+			}
+			isrcOK := tc.cand.isrc != ""
+
+			pass := artistOK && durationOK && variantOK && isrcOK
+			if pass != tc.wantPass {
+				t.Errorf("filtering(%+v) = %v, want %v (artist=%v dur=%v variant=%v isrc=%v)",
+					tc.cand, pass, tc.wantPass, artistOK, durationOK, variantOK, isrcOK)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // buildExtendedMixServiceOrder
 // ---------------------------------------------------------------------------
 
 func TestBuildExtendedMixServiceOrder(t *testing.T) {
-	for _, preferred := range []string{"qobuz", "tidal", "amazon"} {
+	for _, preferred := range []string{"qobuz", "deezer", "tidal", "amazon"} {
 		order := buildExtendedMixServiceOrder(preferred)
 		if order[0] != preferred {
 			t.Errorf("preferred=%q: expected first in order, got %v", preferred, order)

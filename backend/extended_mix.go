@@ -193,6 +193,8 @@ func FindExtendedMixOnService(service, trackName, artistName string, originalDur
 	switch service {
 	case "qobuz":
 		return findExtendedMixOnQobuz(trackName, artistName, originalDurationSeconds)
+	case "deezer":
+		return findExtendedMixOnDeezer(trackName, artistName, originalDurationSeconds)
 	default:
 		return "", "", false
 	}
@@ -265,7 +267,8 @@ func ResolveExtendedMix(preferredService, trackName, artistName string, original
 // buildExtendedMixServiceOrder returns the services to probe in Path B, with the
 // preferred service first followed by all remaining services in a fixed order.
 func buildExtendedMixServiceOrder(preferredService string) []string {
-	all := []string{"qobuz", "tidal", "amazon"}
+	// deezer is search-only (returns ISRC, no service switch); placed after qobuz.
+	all := []string{"qobuz", "deezer", "tidal", "amazon"}
 	order := make([]string, 0, len(all))
 	order = append(order, preferredService)
 	for _, svc := range all {

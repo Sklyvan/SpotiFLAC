@@ -643,14 +643,22 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 				spotifyURL = fmt.Sprintf("https://open.spotify.com/track/%s", req.SpotifyID)
 			} else if extResult.ServiceTrackID != "" {
 				// Path B: extended mix found directly on a service catalog.
-				// Switch the active service if the match came from a different one.
-				if extResult.FoundOnService != "" && extResult.FoundOnService != req.Service {
-					req.Service = extResult.FoundOnService
-				}
-				// Inject the service-native track ID using the existing "qobuz_" prefix
-				// convention so the Qobuz downloader bypasses ISRC search entirely.
-				if extResult.FoundOnService == "qobuz" {
+				switch extResult.FoundOnService {
+				case "qobuz":
+					// Switch to Qobuz if needed and inject the native track ID so the
+					// Qobuz downloader bypasses ISRC search entirely.
+					if extResult.FoundOnService != req.Service {
+						req.Service = extResult.FoundOnService
+					}
 					req.ISRC = "qobuz_" + extResult.ServiceTrackID
+				case "deezer":
+					// Deezer is search-only — keep the original download service and
+					// inject the ISRC returned by Deezer so the downloader can resolve it.
+					req.ISRC = extResult.ServiceTrackID
+				default:
+					if extResult.FoundOnService != "" && extResult.FoundOnService != req.Service {
+						req.Service = extResult.FoundOnService
+					}
 				}
 			}
 		} else {
