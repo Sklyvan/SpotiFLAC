@@ -267,6 +267,8 @@ func (a *App) getFirstArtist(artistString string) string {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 
+	backend.InitAppLogger()
+
 	if err := backend.InitHistoryDB("SpotiFLAC"); err != nil {
 		fmt.Printf("Failed to init history DB: %v\n", err)
 	}
@@ -287,6 +289,7 @@ func (a *App) shutdown(ctx context.Context) {
 	backend.CloseHistoryDB()
 	backend.CloseISRCCacheDB()
 	backend.CloseProviderPriorityDB()
+	backend.CloseAppLogger()
 }
 
 type SpotifyMetadataRequest struct {
@@ -623,7 +626,7 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 	skipDurationValidation := false
 	extendedMixWarning := ""
 
-	fmt.Printf("[ExtMix] PreferExtendedMix=%v service=%q track=%q artist=%q spotifyID=%q duration=%ds\n",
+	backend.AppLog("[ExtMix] PreferExtendedMix=%v service=%q track=%q artist=%q spotifyID=%q duration=%ds\n",
 		backend.PreferExtendedMix, req.Service, req.TrackName, req.ArtistName, req.SpotifyID, req.Duration)
 
 	if backend.PreferExtendedMix && req.SpotifyID != "" && req.TrackName != "" && req.ArtistName != "" {
@@ -652,7 +655,7 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 			}
 		} else {
 			extendedMixWarning = "No Extended Mix found — downloading standard version."
-			fmt.Printf("⚠ %s\n", extendedMixWarning)
+			backend.AppLog("⚠ %s\n", extendedMixWarning)
 		}
 	}
 
