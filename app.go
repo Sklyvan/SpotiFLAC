@@ -344,6 +344,8 @@ type DownloadResponse struct {
 	Error         string `json:"error,omitempty"`
 	AlreadyExists bool   `json:"already_exists,omitempty"`
 	ItemID        string `json:"item_id,omitempty"`
+	// Warning carries a non-fatal advisory message, e.g. when no extended mix was found.
+	Warning string `json:"warning,omitempty"`
 }
 
 func cleanupInvalidDownloadArtifacts(paths ...string) {
@@ -615,6 +617,42 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 		}
 	}
 
+	// skipDurationValidation is set when an extended mix is successfully resolved.
+	// The extended version's duration is intentionally different from the original,
+	// so the >2-second mismatch guard must not reject it.
+	skipDurationValidation := false
+	extendedMixWarning := ""
+
+	if backend.PreferExtendedMix && req.SpotifyID != "" && req.TrackName != "" && req.ArtistName != "" {
+		extResult, extFound := backend.ResolveExtendedMix(req.Service, req.TrackName, req.ArtistName, req.Duration)
+		if extFound {
+			req.TrackName = fmt.Sprintf("%s (%s)", req.TrackName, extResult.VariantTitle)
+			skipDurationValidation = true
+			backend.UpdateQueueItemTrackName(itemID, req.TrackName)
+
+			if extResult.SpotifyID != "" {
+				// Path A: extended mix found on Spotify; adopt its identity for all downstream lookups.
+				req.SpotifyID = extResult.SpotifyID
+				req.ISRC = extResult.ISRC
+				spotifyURL = fmt.Sprintf("https://open.spotify.com/track/%s", req.SpotifyID)
+			} else if extResult.ServiceTrackID != "" {
+				// Path B: extended mix found directly on a service catalog.
+				// Switch the active service if the match came from a different one.
+				if extResult.FoundOnService != "" && extResult.FoundOnService != req.Service {
+					req.Service = extResult.FoundOnService
+				}
+				// Inject the service-native track ID using the existing "qobuz_" prefix
+				// convention so the Qobuz downloader bypasses ISRC search entirely.
+				if extResult.FoundOnService == "qobuz" {
+					req.ISRC = "qobuz_" + extResult.ServiceTrackID
+				}
+			}
+		} else {
+			extendedMixWarning = "No Extended Mix found — downloading standard version."
+			fmt.Printf("⚠ %s\n", extendedMixWarning)
+		}
+	}
+
 	lyricsChan := make(chan string, 1)
 	isrcChan := make(chan string, 1)
 
@@ -730,7 +768,7 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 	}
 
 	if !alreadyExists {
-		validated, validationErr := backend.ValidateDownloadedTrackDuration(filename, req.Duration)
+		validated, validationErr := backend.ValidateDownloadedTrackDurationConditional(filename, req.Duration, skipDurationValidation)
 		if validationErr != nil {
 			cleanupInvalidDownloadArtifacts(filename)
 			errorMessage := validationErr.Error()
@@ -853,6 +891,7 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 		File:          filename,
 		AlreadyExists: alreadyExists,
 		ItemID:        itemID,
+		Warning:       extendedMixWarning,
 	}, nil
 }
 
