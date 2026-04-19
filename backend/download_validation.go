@@ -13,6 +13,18 @@ const (
 	durationDiffRatio         = 0.25
 )
 
+// ValidateDownloadedTrackDurationConditional wraps ValidateDownloadedTrackDuration with an
+// optional skip flag. When skip is true the function returns (true, nil) immediately without
+// inspecting the file. This is used for extended-mix downloads, where the downloaded track's
+// duration legitimately differs from the original Spotify track's duration that is stored in
+// DownloadRequest.Duration. Standard downloads are unaffected (skip=false).
+func ValidateDownloadedTrackDurationConditional(filePath string, expectedSeconds int, skip bool) (bool, error) {
+	if skip {
+		return true, nil
+	}
+	return ValidateDownloadedTrackDuration(filePath, expectedSeconds)
+}
+
 func ValidateDownloadedTrackDuration(filePath string, expectedSeconds int) (bool, error) {
 	if filePath == "" || expectedSeconds <= 0 {
 		return false, nil
