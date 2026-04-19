@@ -442,22 +442,30 @@ func (q *QobuzDownloader) searchByTitleArtistVariant(title, artist, variant stri
 		return nil, fmt.Errorf("no qobuz results for %q %q", title, variant)
 	}
 
+	fmt.Printf("[ExtMix/Qobuz]   Got %d candidates from API\n", len(searchResp.Tracks.Items))
+
 	for i := range searchResp.Tracks.Items {
 		track := &searchResp.Tracks.Items[i]
-
 		combinedArtist := track.Performer.Name + " " + track.Album.Artist.Name
+		fullTitle := track.Title + " " + track.Version
+
+		fmt.Printf("[ExtMix/Qobuz]   Candidate: title=%q version=%q artist=%q duration=%ds (need >%d)\n",
+			track.Title, track.Version, combinedArtist, track.Duration, minDurationSeconds)
+
 		if !extendedMixArtistMatches(combinedArtist, artist) {
+			fmt.Printf("[ExtMix/Qobuz]     SKIP: artist mismatch (want %q, got %q)\n", artist, combinedArtist)
 			continue
 		}
 
 		// Qobuz stores the variant info in Title or Version; check both.
-		fullTitle := track.Title + " " + track.Version
 		if !extendedMixTitleContainsVariant(fullTitle, variant) {
+			fmt.Printf("[ExtMix/Qobuz]     SKIP: fullTitle %q does not contain variant %q\n", fullTitle, variant)
 			continue
 		}
 
 		// QobuzTrack.Duration is in seconds.
 		if track.Duration <= minDurationSeconds {
+			fmt.Printf("[ExtMix/Qobuz]     SKIP: duration %ds not longer than original %ds\n", track.Duration, minDurationSeconds)
 			continue
 		}
 

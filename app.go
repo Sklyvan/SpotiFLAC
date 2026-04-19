@@ -623,6 +623,9 @@ func (a *App) DownloadTrack(req DownloadRequest) (DownloadResponse, error) {
 	skipDurationValidation := false
 	extendedMixWarning := ""
 
+	fmt.Printf("[ExtMix] PreferExtendedMix=%v service=%q track=%q artist=%q spotifyID=%q duration=%ds\n",
+		backend.PreferExtendedMix, req.Service, req.TrackName, req.ArtistName, req.SpotifyID, req.Duration)
+
 	if backend.PreferExtendedMix && req.SpotifyID != "" && req.TrackName != "" && req.ArtistName != "" {
 		extResult, extFound := backend.ResolveExtendedMix(req.Service, req.TrackName, req.ArtistName, req.Duration)
 		if extFound {

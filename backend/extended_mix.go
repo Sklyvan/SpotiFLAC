@@ -56,36 +56,46 @@ func FindExtendedMixOnSpotify(trackName, artistName string, originalDurationSeco
 
 	for _, variant := range extendedMixVariants {
 		query := fmt.Sprintf("%s %s %s", trackName, variant, artistName)
+		fmt.Printf("[ExtMix/Spotify] Trying variant=%q query=%q\n", variant, query)
 
 		results, err := client.SearchByType(ctx, query, "track", 5, 0)
 		if err != nil {
-			fmt.Printf("Extended mix Spotify search failed for variant %q: %v\n", variant, err)
+			fmt.Printf("[ExtMix/Spotify] Search error for variant=%q: %v\n", variant, err)
 			continue
 		}
 
+		fmt.Printf("[ExtMix/Spotify] Got %d results for variant=%q\n", len(results), variant)
+
 		for _, result := range results {
+			fmt.Printf("[ExtMix/Spotify]   Candidate: %q by %q durationMs=%d (need >%d)\n",
+				result.Name, result.Artists, result.Duration, originalDurationMS)
+
 			if !extendedMixArtistMatches(result.Artists, artistName) {
+				fmt.Printf("[ExtMix/Spotify]     SKIP: artist mismatch (want %q, got %q)\n", artistName, result.Artists)
 				continue
 			}
 			if !extendedMixTitleContainsVariant(result.Name, variant) {
+				fmt.Printf("[ExtMix/Spotify]     SKIP: title %q does not contain variant %q\n", result.Name, variant)
 				continue
 			}
 			// SearchResult.Duration is in milliseconds.
 			if result.Duration <= originalDurationMS {
+				fmt.Printf("[ExtMix/Spotify]     SKIP: duration %dms not longer than original %dms\n", result.Duration, originalDurationMS)
 				continue
 			}
 
 			identifiers, err := GetSpotifyTrackIdentifiersDirect(result.ID)
 			if err != nil || identifiers.ISRC == "" {
-				fmt.Printf("Extended mix: could not resolve ISRC for Spotify candidate %s: %v\n", result.ID, err)
+				fmt.Printf("[ExtMix/Spotify]     SKIP: could not resolve ISRC for %s: %v\n", result.ID, err)
 				continue
 			}
 
-			fmt.Printf("Extended mix found on Spotify: %q ISRC=%s SpotifyID=%s\n", result.Name, identifiers.ISRC, result.ID)
+			fmt.Printf("[ExtMix/Spotify] MATCH: %q ISRC=%s SpotifyID=%s\n", result.Name, identifiers.ISRC, result.ID)
 			return identifiers.ISRC, result.ID, variant, true
 		}
 	}
 
+	fmt.Printf("[ExtMix/Spotify] No qualifying result found across all variants\n")
 	return "", "", "", false
 }
 
@@ -107,16 +117,18 @@ func findExtendedMixOnQobuz(trackName, artistName string, originalDurationSecond
 	q := NewQobuzDownloader()
 
 	for _, variant := range extendedMixVariants {
+		fmt.Printf("[ExtMix/Qobuz] Trying variant=%q for track=%q artist=%q minDuration=%ds\n", variant, trackName, artistName, originalDurationSeconds)
 		track, err := q.searchByTitleArtistVariant(trackName, artistName, variant, originalDurationSeconds)
 		if err != nil {
-			fmt.Printf("Extended mix Qobuz search failed for variant %q: %v\n", variant, err)
+			fmt.Printf("[ExtMix/Qobuz] No match for variant=%q: %v\n", variant, err)
 			continue
 		}
 
-		fmt.Printf("Extended mix found on Qobuz: %q ID=%d\n", track.Title, track.ID)
+		fmt.Printf("[ExtMix/Qobuz] MATCH: %q (version=%q) ID=%d duration=%ds\n", track.Title, track.Version, track.ID, track.Duration)
 		return fmt.Sprintf("%d", track.ID), variant, true
 	}
 
+	fmt.Printf("[ExtMix/Qobuz] No qualifying result found across all variants\n")
 	return "", "", false
 }
 
