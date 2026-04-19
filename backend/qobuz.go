@@ -413,6 +413,60 @@ func (q *QobuzDownloader) DownloadTrack(spotifyID, outputDir, quality, filenameF
 	return q.DownloadTrackWithISRC(isrc, outputDir, quality, filenameFormat, includeTrackNumber, position, spotifyTrackName, spotifyArtistName, spotifyAlbumName, spotifyAlbumArtist, spotifyReleaseDate, useAlbumTrackNumber, spotifyCoverURL, embedMaxQualityCover, spotifyTrackNumber, spotifyDiscNumber, spotifyTotalTracks, spotifyTotalDiscs, spotifyCopyright, spotifyPublisher, spotifyComposer, metadataSeparator, spotifyURL, allowFallback, useFirstArtistOnly, useSingleGenre, embedGenre)
 }
 
+// searchByTitleArtistVariant searches Qobuz for a track whose title contains the given variant
+// keyword, whose artist matches the expected artist name, and whose duration exceeds
+// minDurationSeconds (the original track's duration in whole seconds). It returns the first
+// qualifying QobuzTrack or an error when no result passes all three filters.
+func (q *QobuzDownloader) searchByTitleArtistVariant(title, artist, variant string, minDurationSeconds int) (*QobuzTrack, error) {
+	query := fmt.Sprintf("%s %s", title, variant)
+
+	resp, err := doQobuzSignedRequest(http.MethodGet, "track/search", url.Values{
+		"query": {query},
+		"limit": {"5"},
+	}, q.client)
+	if err != nil {
+		return nil, fmt.Errorf("qobuz extended mix search request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("qobuz extended mix search returned status %d", resp.StatusCode)
+	}
+
+	var searchResp QobuzSearchResponse
+	if err := json.NewDecoder(resp.Body).Decode(&searchResp); err != nil {
+		return nil, fmt.Errorf("failed to decode qobuz extended mix search response: %w", err)
+	}
+
+	if len(searchResp.Tracks.Items) == 0 {
+		return nil, fmt.Errorf("no qobuz results for %q %q", title, variant)
+	}
+
+	for i := range searchResp.Tracks.Items {
+		track := &searchResp.Tracks.Items[i]
+
+		combinedArtist := track.Performer.Name + " " + track.Album.Artist.Name
+		if !extendedMixArtistMatches(combinedArtist, artist) {
+			continue
+		}
+
+		// Qobuz stores the variant info in Title or Version; check both.
+		fullTitle := track.Title + " " + track.Version
+		if !extendedMixTitleContainsVariant(fullTitle, variant) {
+			continue
+		}
+
+		// QobuzTrack.Duration is in seconds.
+		if track.Duration <= minDurationSeconds {
+			continue
+		}
+
+		return track, nil
+	}
+
+	return nil, fmt.Errorf("no qualifying qobuz extended mix for %q with variant %q", title, variant)
+}
+
 func (q *QobuzDownloader) DownloadTrackWithISRC(isrc, outputDir, quality, filenameFormat string, includeTrackNumber bool, position int, spotifyTrackName, spotifyArtistName, spotifyAlbumName, spotifyAlbumArtist, spotifyReleaseDate string, useAlbumTrackNumber bool, spotifyCoverURL string, embedMaxQualityCover bool, spotifyTrackNumber, spotifyDiscNumber, spotifyTotalTracks int, spotifyTotalDiscs int, spotifyCopyright, spotifyPublisher, spotifyComposer, metadataSeparator, spotifyURL string, allowFallback bool, useFirstArtistOnly bool, useSingleGenre bool, embedGenre bool) (string, error) {
 	fmt.Printf("Fetching track info for ISRC: %s\n", isrc)
 
