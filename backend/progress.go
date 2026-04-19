@@ -229,6 +229,21 @@ func StartDownloadItem(id string) {
 	currentItemLock.Unlock()
 }
 
+// UpdateQueueItemTrackName updates the display name of an existing queue item. It is called
+// after an extended-mix variant is found so that the UI reflects the resolved title
+// (e.g. "Losing It (Extended Mix)") before the download begins.
+func UpdateQueueItemTrackName(id, trackName string) {
+	downloadQueueLock.Lock()
+	defer downloadQueueLock.Unlock()
+
+	for i := range downloadQueue {
+		if downloadQueue[i].ID == id {
+			downloadQueue[i].TrackName = trackName
+			break
+		}
+	}
+}
+
 func UpdateItemProgress(id string, progress, speed float64) {
 	downloadQueueLock.Lock()
 	defer downloadQueueLock.Unlock()
