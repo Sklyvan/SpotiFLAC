@@ -3,6 +3,7 @@ package backend
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -20,6 +21,43 @@ var extendedMixVariants = []string{
 	"Extended Edit",
 	"Extended",
 	"Club Mix",
+	"Pro Mix",
+}
+
+// editSuffixRe matches suffixes that indicate a shortened/edited version of a track
+// (radio edit, album version, original mix, etc.) so they can be stripped from the
+// track name before building extended-mix search queries.
+// Deliberately does NOT match: Extended Mix, Extended Version, Club Mix, Remix, Pro Mix.
+var editSuffixRe = regexp.MustCompile(
+	`(?i)` +
+		`(?:` +
+		// dash-separated: "- Edit", "- Radio Edit", "- Short Edit", "- Clean Edit"
+		`\s*[-–—]\s*(?:radio\s+|short\s+|clean\s+|album\s+|single\s+)?edit` +
+		// dash-separated: "- Original Mix", "- Radio Mix", "- Album Mix", "- Album Version"
+		`|\s*[-–—]\s*(?:original|radio|album|single|clean)\s+(?:mix|version)` +
+		// dash-separated: "- Mono", "- Stereo" (standalone recording type)
+		`|\s*[-–—]\s*(?:mono|stereo)` +
+		// parenthesised: "(Edit)", "(Radio Edit)", "(Short Edit)"
+		`|\s*\(\s*(?:radio\s+|short\s+|clean\s+|album\s+|single\s+)?edit\s*\)` +
+		// parenthesised: "(Original Mix)", "(Radio Mix)", "(Album Version)"
+		`|\s*\(\s*(?:original|radio|album|single|clean|mono|stereo)\s+(?:mix|version)\s*\)` +
+		`)` +
+		`\s*$`,
+)
+
+// stripEditSuffixForSearch removes common shortened-version suffixes from a track
+// name so the search query targets the underlying song rather than the specific edit.
+// Example: "Destiny - Edit" → "Destiny", "Losing It (Radio Edit)" → "Losing It".
+// Returns the original name unchanged if no suffix is matched or if stripping would
+// produce an empty string.
+func stripEditSuffixForSearch(trackName string) string {
+	stripped := strings.TrimSpace(editSuffixRe.ReplaceAllString(trackName, ""))
+	stripped = strings.TrimRight(stripped, " -–—")
+	stripped = strings.TrimSpace(stripped)
+	if stripped == "" {
+		return trackName
+	}
+	return stripped
 }
 
 // ExtendedMixResult carries the identifiers needed to download an extended-mix variant.
@@ -54,8 +92,13 @@ func FindExtendedMixOnSpotify(trackName, artistName string, originalDurationSeco
 	client := NewSpotifyMetadataClient()
 	originalDurationMS := originalDurationSeconds * 1000
 
+	searchName := stripEditSuffixForSearch(trackName)
+	if searchName != trackName {
+		AppLog("[ExtMix/Spotify] Stripped search name: %q → %q\n", trackName, searchName)
+	}
+
 	for _, variant := range extendedMixVariants {
-		query := fmt.Sprintf("%s %s %s", trackName, variant, artistName)
+		query := fmt.Sprintf("%s %s %s", searchName, variant, artistName)
 		AppLog("[ExtMix/Spotify] Trying variant=%q query=%q\n", variant, query)
 
 		results, err := client.SearchByType(ctx, query, "track", 5, 0)
@@ -116,9 +159,14 @@ func FindExtendedMixOnService(service, trackName, artistName string, originalDur
 func findExtendedMixOnQobuz(trackName, artistName string, originalDurationSeconds int) (serviceTrackID, variantTitle string, found bool) {
 	q := NewQobuzDownloader()
 
+	searchName := stripEditSuffixForSearch(trackName)
+	if searchName != trackName {
+		AppLog("[ExtMix/Qobuz] Stripped search name: %q → %q\n", trackName, searchName)
+	}
+
 	for _, variant := range extendedMixVariants {
-		AppLog("[ExtMix/Qobuz] Trying variant=%q for track=%q artist=%q minDuration=%ds\n", variant, trackName, artistName, originalDurationSeconds)
-		track, err := q.searchByTitleArtistVariant(trackName, artistName, variant, originalDurationSeconds)
+		AppLog("[ExtMix/Qobuz] Trying variant=%q for track=%q artist=%q minDuration=%ds\n", variant, searchName, artistName, originalDurationSeconds)
+		track, err := q.searchByTitleArtistVariant(searchName, artistName, variant, originalDurationSeconds)
 		if err != nil {
 			AppLog("[ExtMix/Qobuz] No match for variant=%q: %v\n", variant, err)
 			continue

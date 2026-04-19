@@ -123,6 +123,51 @@ func TestExtendedMixDurationFilter(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// stripEditSuffixForSearch
+// ---------------------------------------------------------------------------
+
+func TestStripEditSuffixForSearch(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+		desc  string
+	}{
+		// core case from the bug report
+		{"Destiny - Edit", "Destiny", "dash edit suffix"},
+		// common patterns to strip
+		{"Losing It (Radio Edit)", "Losing It", "parenthesised radio edit"},
+		{"Song Name - Radio Edit", "Song Name", "dash radio edit"},
+		{"Song Name - Short Edit", "Song Name", "dash short edit"},
+		{"Song Name - Clean Edit", "Song Name", "dash clean edit"},
+		{"Song Name - Original Mix", "Song Name", "dash original mix"},
+		{"Song Name (Original Mix)", "Song Name", "parenthesised original mix"},
+		{"Song Name - Album Version", "Song Name", "dash album version"},
+		{"Song Name (Album Version)", "Song Name", "parenthesised album version"},
+		{"Song Name - Single Version", "Song Name", "dash single version"},
+		{"Song Name - Mono", "Song Name", "dash mono"},
+		// must NOT strip extended/club/remix variants
+		{"Losing It (Extended Mix)", "Losing It (Extended Mix)", "extended mix preserved"},
+		{"Losing It - Extended Mix", "Losing It - Extended Mix", "dash extended mix preserved"},
+		{"Song (Club Mix)", "Song (Club Mix)", "club mix preserved"},
+		{"Song - Remix", "Song - Remix", "remix preserved"},
+		{"Song (Pro Mix)", "Song (Pro Mix)", "pro mix preserved"},
+		// no suffix → unchanged
+		{"Losing It", "Losing It", "no suffix unchanged"},
+		// stripping leaves non-empty result
+		{"X - Edit", "X", "single char track name"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := stripEditSuffixForSearch(tc.input)
+			if got != tc.want {
+				t.Errorf("stripEditSuffixForSearch(%q) = %q, want %q", tc.input, got, tc.want)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
 // buildExtendedMixServiceOrder
 // ---------------------------------------------------------------------------
 
