@@ -2,7 +2,6 @@ package backend
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -10,13 +9,12 @@ import (
 )
 
 var (
-	appLogFile   *os.File
-	appLogWriter io.Writer
-	appLogMu     sync.Mutex
+	appLogFile *os.File
+	appLogMu   sync.Mutex
 )
 
-// InitAppLogger opens (or creates) ~/.spotiflac/debug.log and sets up the writer
-// used by AppLog. Called once from app startup.
+// InitAppLogger opens (or creates) ~/.spotiflac/debug.log.
+// Called once from app startup.
 func InitAppLogger() {
 	appDir, err := EnsureAppDir()
 	if err != nil {
@@ -32,8 +30,7 @@ func InitAppLogger() {
 	}
 
 	appLogFile = f
-	appLogWriter = io.MultiWriter(os.Stdout, f)
-	AppLog("Logger initialised — writing to %s\n", logPath)
+	AppLog("=== Session started (%s) — log: %s ===\n", time.Now().Format("2006-01-02 15:04:05"), logPath)
 }
 
 // CloseAppLogger flushes and closes the log file. Called from app shutdown.
@@ -44,11 +41,12 @@ func CloseAppLogger() {
 		_ = appLogFile.Sync()
 		_ = appLogFile.Close()
 		appLogFile = nil
-		appLogWriter = nil
 	}
 }
 
-// AppLog writes a timestamped line to stdout and to ~/.spotiflac/debug.log.
+// AppLog writes a timestamped line to the log file (always) and to stdout (best-effort).
+// On Windows GUI builds stdout is not attached to a console, so we write to each
+// destination independently — a stdout failure does NOT block the file write.
 func AppLog(format string, args ...interface{}) {
 	appLogMu.Lock()
 	defer appLogMu.Unlock()
@@ -56,9 +54,12 @@ func AppLog(format string, args ...interface{}) {
 	ts := time.Now().Format("15:04:05.000")
 	line := fmt.Sprintf("[%s] %s", ts, fmt.Sprintf(format, args...))
 
-	w := appLogWriter
-	if w == nil {
-		w = os.Stdout
+	// stdout: ignore errors (detached in GUI builds)
+	_, _ = fmt.Fprint(os.Stdout, line)
+
+	// file: always attempt, sync immediately so data survives crashes
+	if appLogFile != nil {
+		_, _ = fmt.Fprint(appLogFile, line)
+		_ = appLogFile.Sync()
 	}
-	fmt.Fprint(w, line)
 }

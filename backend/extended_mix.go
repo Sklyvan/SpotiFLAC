@@ -185,17 +185,37 @@ func buildExtendedMixServiceOrder(preferredService string) []string {
 	return order
 }
 
-// extendedMixArtistMatches reports whether resultArtists contains expectedArtist
-// as a case-insensitive substring. An empty expectedArtist always matches.
+// extendedMixArtistMatches reports whether resultArtists matches expectedArtist.
+// It tries the full string first (case-insensitive), then splits expectedArtist on
+// common separators and checks whether any individual artist appears in resultArtists.
+// This handles the case where a track has multiple artists (e.g. "Fisher, Chris Lake")
+// but the extended-mix result only credits the primary artist ("Fisher").
 func extendedMixArtistMatches(resultArtists, expectedArtist string) bool {
 	expectedArtist = strings.TrimSpace(expectedArtist)
 	if expectedArtist == "" {
 		return true
 	}
-	return strings.Contains(
-		strings.ToLower(strings.TrimSpace(resultArtists)),
-		strings.ToLower(expectedArtist),
-	)
+
+	resultLower := strings.ToLower(strings.TrimSpace(resultArtists))
+
+	// Fast path: full expected string is a substring of the result.
+	if strings.Contains(resultLower, strings.ToLower(expectedArtist)) {
+		return true
+	}
+
+	// Slow path: split on common separators and check each individual artist.
+	for _, sep := range []string{", ", " & ", "; ", " feat. ", " ft. ", " x ", " X "} {
+		if strings.Contains(expectedArtist, sep) {
+			for _, part := range strings.Split(expectedArtist, sep) {
+				part = strings.TrimSpace(part)
+				if part != "" && strings.Contains(resultLower, strings.ToLower(part)) {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
 }
 
 // extendedMixTitleContainsVariant reports whether title contains the variant keyword
